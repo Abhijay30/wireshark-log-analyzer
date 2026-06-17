@@ -1,4 +1,5 @@
 import pyshark
+import ipaddress
 
 results = {
     "hosts": set(),
@@ -55,6 +56,208 @@ def analyze_packet(packet):
         pass
 
 
+def classify_ip(ip):
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+
+        if ip == "255.255.255.255":
+            return "Broadcast"
+
+        if ip_obj.is_multicast:
+            return "Multicast"
+
+        if ip_obj.is_private:
+            return "Internal"
+
+        return "External"
+
+    except ValueError:
+        return "Unknown"
+
+
+def get_host_statistics():
+    stats = {
+        "Internal": 0,
+        "External": 0,
+        "Multicast": 0,
+        "Broadcast": 0,
+        "Unknown": 0
+    }
+
+    for host in results["hosts"]:
+        category = classify_ip(host)
+        stats[category] += 1
+
+    return stats
+
+
+def get_most_active_internal_host():
+    internal_hosts = {}
+
+    for ip, count in results["source_ips"].items():
+        if classify_ip(ip) == "Internal":
+            internal_hosts[ip] = count
+
+    if not internal_hosts:
+        return None
+
+    return max(
+        internal_hosts,
+        key=internal_hosts.get
+    )
+
+
+def generate_findings():
+
+    findings = []
+
+    if "QUIC" in results["protocols"]:
+        findings.append(
+            "[INFO] Heavy encrypted web browsing traffic detected."
+        )
+
+    if "DNS" in results["protocols"]:
+        findings.append(
+            "[INFO] DNS lookups observed."
+        )
+
+    if "MDNS" in results["protocols"]:
+        findings.append(
+            "[INFO] Local device discovery traffic observed."
+        )
+
+    if "SSDP" in results["protocols"]:
+        findings.append(
+            "[INFO] Smart device discovery traffic observed."
+        )
+
+    if "TELNET" in results["protocols"]:
+        findings.append(
+            "[WARNING] Insecure Telnet traffic detected."
+        )
+
+    if "FTP" in results["protocols"]:
+        findings.append(
+            "[WARNING] FTP traffic detected."
+        )
+
+    return findings
+
+
+def print_executive_summary():
+
+    stats = get_host_statistics()
+
+    print("\n" + "=" * 60)
+    print("EXECUTIVE SUMMARY")
+    print("=" * 60)
+
+    risk = "LOW"
+    if "TELNET" in results["protocols"]:
+        risk = "HIGH"
+    elif "FTP" in results["protocols"]:
+        risk = "MEDIUM"
+
+    print(f"Risk Level: {risk}")
+
+    print("\nWhat Happened?")
+
+    if "QUIC" in results["protocols"]:
+        print(
+            "- Heavy encrypted web browsing detected."
+        )
+
+    if "DNS" in results["protocols"]:
+        print(
+            "- Website lookups were observed."
+        )
+
+    if "MDNS" in results["protocols"]:
+        print(
+            "- Local device discovery traffic detected."
+        )
+
+    most_active_internal = get_most_active_internal_host()
+
+    if most_active_internal:
+        print(
+            f"- Most active internal device: "
+            f"{most_active_internal}"
+        )
+
+    print(
+        f"\nInternal Devices: "
+        f"{stats['Internal']}"
+    )
+
+    print(
+        f"External Devices: "
+        f"{stats['External']}"
+    )
+
+
+def print_key_findings():
+
+    print("\n" + "=" * 60)
+    print("KEY FINDINGS")
+    print("=" * 60)
+
+    findings = generate_findings()
+
+    if not findings:
+        print("[INFO] No significant findings.")
+
+    for finding in findings:
+        print(finding)
+
+
+def print_risk_assessment():
+
+    print("\n" + "=" * 60)
+    print("RISK ASSESSMENT")
+    print("=" * 60)
+
+    risk = "LOW"
+
+    if "TELNET" in results["protocols"]:
+        risk = "HIGH"
+
+    elif "FTP" in results["protocols"]:
+        risk = "MEDIUM"
+
+    print(risk)
+
+    if risk == "LOW":
+        print(
+            "Traffic appears consistent with normal user activity."
+        )
+
+    elif risk == "MEDIUM":
+        print(
+            "Potentially insecure protocols detected."
+        )
+
+    else:
+        print(
+            "High-risk protocols detected."
+        )
+
+
+def print_technical_details_header():
+
+    stats = get_host_statistics()
+
+    print("\n" + "=" * 60)
+    print("TECHNICAL DETAILS")
+    print("=" * 60)
+
+    print(f"Internal Hosts : {stats['Internal']}")
+    print(f"External Hosts : {stats['External']}")
+    print(f"Multicast Hosts: {stats['Multicast']}")
+    print(f"Broadcast Hosts: {stats['Broadcast']}")
+    
+
+
 def print_protocol_analysis():
     print("\n" + "=" * 60)
     print("PROTOCOL ANALYSIS")
@@ -68,7 +271,10 @@ def print_protocol_analysis():
         print(f"\n{protocol}: {count}")
 
         if protocol in PROTOCOL_EXPLANATIONS:
-            print(f"Explanation: {PROTOCOL_EXPLANATIONS[protocol]}")
+            print(
+                f"Explanation: "
+                f"{PROTOCOL_EXPLANATIONS[protocol]}"
+            )
 
 
 def print_top_talkers():
@@ -82,7 +288,11 @@ def print_top_talkers():
         reverse=True
     )[:10]:
 
-        print(f"{ip}: {count}")
+        category = classify_ip(ip)
+
+        print(
+            f"{ip} ({category}) : {count}"
+        )
 
 
 def print_conversations():
@@ -99,73 +309,10 @@ def print_conversations():
         source, destination = conversation
 
         print(
-            f"{source} -> {destination}: {count}"
+            f"{source} -> {destination} : {count}"
         )
-
-
-def generate_summary():
-    print("\n" + "=" * 60)
-    print("ANALYST SUMMARY")
-    print("=" * 60)
-
-    total_hosts = len(results["hosts"])
-
-    most_active_host = max(
-        results["source_ips"],
-        key=results["source_ips"].get
-    )
-
-    most_common_protocol = max(
-        results["protocols"],
-        key=results["protocols"].get
-    )
-
-    print(f"Hosts Discovered: {total_hosts}")
-    print(f"Most Active Device: {most_active_host}")
-    print(f"Most Common Protocol: {most_common_protocol}")
-
-    print("\nInterpretation:")
-
-    if most_common_protocol == "QUIC":
-        print(
-            "- Traffic is dominated by modern encrypted web browsing."
-        )
-
-    if "DNS" in results["protocols"]:
-        print(
-            "- DNS activity detected, indicating website lookups."
-        )
-
-    if "MDNS" in results["protocols"]:
-        print(
-            "- Local device discovery traffic detected."
-        )
-
-    if "SSDP" in results["protocols"]:
-        print(
-            "- Smart device/service discovery traffic detected."
-        )
-
-    print(
-        "- No obvious scanning behavior detected from current statistics."
-    )
-
-    print(
-        "- Traffic appears consistent with normal user activity."
-    )
-
-
-def print_hosts():
-    print("=" * 60)
-    print("HOSTS FOUND")
-    print("=" * 60)
-
-    for host in sorted(results["hosts"]):
-        print(host)
-
 
 def main():
-
     capture = pyshark.FileCapture(
         "sample.pcapng",
         tshark_path=r"D:\Wireshark\tshark.exe"
@@ -176,11 +323,15 @@ def main():
 
     capture.close()
 
-    print_hosts()
-    print_protocol_analysis()
+    print_executive_summary()
+    print_key_findings()
+    print_risk_assessment()
+    print()
+    print_technical_details_header()
+
     print_top_talkers()
     print_conversations()
-    generate_summary()
+    print_protocol_analysis()
 
 
 if __name__ == "__main__":
